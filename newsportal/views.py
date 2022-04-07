@@ -8,7 +8,6 @@ from django.shortcuts import redirect
 from django.contrib.auth.models import Group, User
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-
 from .models import Post, Category, Author
 from .filters import PostFilter  # импортируем недавно написанный фильтр
 from .forms import PostForm
@@ -49,51 +48,39 @@ class NewDetail(DetailView):
     template_name = 'new.html'  # название шаблона будет new.html
     queryset = Post.objects.all()
 
-class PostCreateView(CreateView):
+class PostCreateView(PermissionRequiredMixin, LoginRequiredMixin, CreateView):
     template_name = 'news_create.html'
     form_class = PostForm
-    permission_required = ('news.add_post',)
+    permission_required = ('newsportal.add_post',)
 
-    def get(self, request, *args, **kwargs):
-        author = Author.objects.get(user=self.request.user)
-        now = datetime.now()
-        today = now.date()
-        count_post = Post.objects.filter(author=author, created__gte=today).count()
-        print(count_post)
-        if count_post >= 3:
-            raise PermissionDenied("Вы не можете оставлять более 3 статей в день!")
-        self.object = None
-        return super().get(request, *args, **kwargs)
 
-    def post(self, request, *args, **kwargs):
-        author = Author.objects.get(user=self.request.user)
-        today = datetime.today().date()
-        count_post = Post.objects.filter(author=author, created__gte=today).count()
-        print(count_post)
-        if count_post >= 3:
-            raise PermissionDenied("Вы не можете оставлять более 3 статей в день!")
-        self.object = None
-        return super().post(request, *args, **kwargs)
+    def form_valid(self, form):
+        form.instance.author = Author.objects.get(user=self.request.user)
+        return super(PostCreateView, self).form_valid(form)
 
 
 
 # дженерик для редактирования объекта
-class PostUpdateView(UpdateView):
+class PostUpdateView(PermissionRequiredMixin, LoginRequiredMixin, UpdateView):
     template_name = 'news_update.html'
     form_class = PostForm
-    permission_required = ('news.change_post',)
+    permission_required = ('newsportal.change_post',)
 
     # метод get_object мы используем вместо queryset, чтобы получить информацию об объекте, который мы собираемся редактировать
     def get_object(self, **kwargs):
-        id = self.kwargs.get('pk')
-        return Post.objects.get(pk=id)
+        author = Post.objects.get(pk=self.kwargs.get('pk')).author.user
+        user = User.objects.get(username=self.request.user)
+        if user != author:
+            raise PermissionDenied
+        return Post.objects.get(pk=self.kwargs.get('pk'))
 
 
 # дженерик для удаления товара
-class PostDeleteView(DeleteView):
+class PostDeleteView(PermissionRequiredMixin, LoginRequiredMixin, DeleteView):
     template_name = 'news_delete.html'
     queryset = Post.objects.all()
-    success_url = '/news/'
+    success_url = '/newsportal/'
+    permission_required = ('newsportal.delete_post',)
 
     def get_object(self, **kwargs):
         author = Post.objects.get(pk=self.kwargs.get('pk')).author.user
